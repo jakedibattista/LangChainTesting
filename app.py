@@ -22,17 +22,15 @@ page = st.sidebar.radio("Select Page", ["Search", "Upload", "Debug"])
 if page == "Search":
     # Main search interface
     st.header("Search Documents")
-    col1, col2, col3 = st.columns([3, 1, 1])
+    col1, col2 = st.columns([4, 1])
     with col1:
         query = st.text_input("Enter your search query")
     with col2:
         k = st.number_input("Number of results", min_value=1, max_value=10, value=3)
-    with col3:
-        debug_search = st.checkbox("Debug Search", key="debug_search")
 
     if query:
         with st.spinner("Searching..."):
-            results = kb.search(query, k=k, debug=debug_search)
+            results = kb.search(query, k=k)
             
             if not results:
                 st.info("No relevant results found. Try a different query.")
@@ -123,52 +121,42 @@ elif page == "Debug":
     # Debug interface
     st.header("Debug Information")
     
-    col1, col2 = st.columns(2)
+    # Database Management Section
+    st.subheader("Database Management")
+    col1, col2, col3 = st.columns(3)
+    
     with col1:
         if st.button("Check Vector Store"):
             kb.check_vector_store()
+    
     with col2:
         if st.button("Check Stored Documents"):
             kb.check_documents()
-
-# Sidebar for database management
-with st.sidebar:
-    st.header("Database Management")
-    # Change button text based on current state
-    view_button_text = "Hide Documents" if st.session_state.show_documents else "View All Documents"
-    if st.button(view_button_text):
-        # Toggle the view state
-        st.session_state.show_documents = not st.session_state.show_documents
+            
+    with col3:
+        # Clear database functionality
+        confirm_clear = st.checkbox("I understand this will delete ALL documents")
+        if st.button("🗑️ Clear Database"):
+            if confirm_clear:
+                clear_database()
+                st.success("Database cleared!")
+                st.rerun()
+            else:
+                st.warning("Please confirm by checking the box")
     
-    # Clear database section
+    # Document View Section
     st.divider()
-    st.subheader("Clear Database")
-    confirm_clear = st.checkbox("I understand this will delete ALL documents")
-    if st.button("🗑️ Clear Entire Database"):
-        if confirm_clear:
-            clear_database()
-            st.success("Database cleared!")
-            st.session_state.show_documents = False
-            st.rerun()
-        else:
-            st.warning("Please confirm by checking the box above")
-
-# Document view section
-if st.session_state.show_documents:
-    st.subheader("All Documents")
+    st.subheader("View All Documents")
     try:
         with st.spinner("Loading documents..."):
             docs = list_documents()
             
-            with st.expander("Available Columns"):
-                st.write(docs['columns'])
+            # Add a delete button container at the top
+            delete_container = st.container()
             
             # Create a container for selected documents
             if 'selected_docs' not in st.session_state:
                 st.session_state.selected_docs = set()
-            
-            # Add a delete button container at the top
-            delete_container = st.container()
             
             # Display documents
             for doc in docs['documents']:
@@ -180,17 +168,16 @@ if st.session_state.show_documents:
                         st.text("Metadata:")
                         st.write(doc.cmetadata)
                     with col2:
-                        # Use session state to maintain checkbox state
                         key = f"select_{doc.uuid}"
-                        if st.checkbox("", key=key, value=doc.uuid in st.session_state.selected_docs):
+                        if st.checkbox("Select", key=key, value=doc.uuid in st.session_state.selected_docs):
                             st.session_state.selected_docs.add(doc.uuid)
                         else:
                             st.session_state.selected_docs.discard(doc.uuid)
             
-            # Show delete button in the container if docs are selected
+            # Show delete button if docs are selected
             with delete_container:
                 if st.session_state.selected_docs:
-                    if st.button(f"🗑️ Delete Selected Documents ({len(st.session_state.selected_docs)})"):
+                    if st.button(f"🗑️ Delete Selected ({len(st.session_state.selected_docs)})"):
                         try:
                             for uuid in st.session_state.selected_docs:
                                 delete_document(uuid)
@@ -199,6 +186,6 @@ if st.session_state.show_documents:
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error deleting documents: {str(e)}")
-
+                            
     except Exception as e:
         st.error(f"Error loading documents: {str(e)}") 
