@@ -139,10 +139,18 @@ class KnowledgeBase:
             if debug:
                 st.write("Executing search...")
             
-            # Get more results initially to allow for better filtering
+            # Expand the query with relevant terms based on the question type
+            query_lower = query.lower()
+            expanded_query = query
+            
+            if "example" in query_lower or "work" in query_lower:
+                # For queries asking about specific examples or work
+                expanded_query = f"{query} developed created designed implemented led project experience"
+            
+            # Get more results with expanded query
             results = self.vector_store.similarity_search_with_score(
-                query, 
-                k=k*3  # Get more results to filter
+                expanded_query, 
+                k=k*4  # Get more results to filter
             )
             
             if debug:
@@ -161,12 +169,14 @@ class KnowledgeBase:
                 content = doc.page_content.strip()
                 
                 # Handle different types of questions
-                query_lower = query.lower()
-                if "experience" in query_lower or "background" in query_lower:
-                    # For experience-related questions
-                    relevant_terms = ["experience", "background", "worked", "role", 
-                                    "led", "developed", "built", "created", "designed",
-                                    "ux", "user experience", "interface"]
+                if "example" in query_lower or "work" in query_lower:
+                    # For specific work examples
+                    relevant_terms = [
+                        "developed", "created", "designed", "built", "implemented",
+                        "led", "project", "worked on", "delivered", "launched",
+                        "ux", "user experience", "interface", "user interface",
+                        "research", "usability", "prototype", "wireframe"
+                    ]
                     sentences = content.split(". ")
                     relevant_sentences = [
                         sent for sent in sentences 
@@ -174,12 +184,14 @@ class KnowledgeBase:
                     ]
                     if relevant_sentences:
                         content = ". ".join(relevant_sentences) + "."
-                        # Boost similarity for highly relevant content
-                        if any(term in content.lower() for term in ["ux", "user experience"]):
+                        # Boost similarity for concrete examples
+                        if any(term in content.lower() for term in ["ux", "user experience", "interface"]):
+                            similarity += 15
+                        if any(term in content.lower() for term in ["developed", "created", "designed", "implemented"]):
                             similarity += 10
                 
                 # Only include relevant results
-                if similarity > 35:  # Lowered threshold but with better filtering
+                if similarity > 35:  # Threshold for relevance
                     formatted_results.append({
                         'content': content,
                         'similarity': similarity,
@@ -189,17 +201,17 @@ class KnowledgeBase:
             # Sort by similarity
             formatted_results.sort(key=lambda x: float(x['similarity']), reverse=True)
             
-            if debug:
-                st.write(f"Returning {len(formatted_results)} filtered results")
-            
             # Remove duplicate content
             seen_content = set()
             unique_results = []
             for result in formatted_results:
                 content_hash = hash(result['content'])
-                if content_hash not in seen_content:
+                if content_hash not in seen_content and len(result['content'].split()) > 10:  # Ensure meaningful content
                     seen_content.add(content_hash)
                     unique_results.append(result)
+            
+            if debug:
+                st.write(f"Returning {len(unique_results[:k])} filtered results")
             
             return unique_results[:k]
             
