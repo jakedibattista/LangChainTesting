@@ -25,45 +25,8 @@ def get_connection_string():
 
 def init_database():
     """Initialize database with required extensions and tables"""
-    conn_string = get_connection_string()
-    
     try:
-        # Create engine
-        engine = create_engine(conn_string)
-        
-        # Create tables with correct schema
-        with engine.connect() as conn:
-            # Create vector extension if not exists
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-            
-            # Drop existing tables if they exist
-            conn.execute(text("DROP TABLE IF EXISTS langchain_pg_embedding;"))
-            conn.execute(text("DROP TABLE IF EXISTS langchain_pg_collection;"))
-            
-            # Create collection table with uuid
-            conn.execute(text("""
-                CREATE TABLE langchain_pg_collection (
-                    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    name VARCHAR(100),
-                    cmetadata JSONB
-                );
-            """))
-            
-            # Create embedding table
-            conn.execute(text("""
-                CREATE TABLE langchain_pg_embedding (
-                    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    collection_id UUID REFERENCES langchain_pg_collection(uuid),
-                    embedding vector(384),
-                    document TEXT,
-                    cmetadata JSONB,
-                    custom_id VARCHAR(100)
-                );
-            """))
-            
-            conn.commit()
-            
-        # Initialize Supabase client for other operations
+        # Get Supabase credentials
         supabase_url = os.getenv("SUPABASE_URL")
         supabase_key = os.getenv("SUPABASE_KEY")
         
@@ -74,7 +37,39 @@ def init_database():
             except KeyError:
                 pass
         
+        if not supabase_url or not supabase_key:
+            raise ValueError("Missing Supabase credentials")
+            
+        # Initialize Supabase client
         supabase = create_client(supabase_url, supabase_key)
+        
+        # The vector extension should already be enabled in Supabase
+        # We just need to ensure our tables exist
+        conn_string = get_connection_string()
+        engine = create_engine(conn_string)
+        
+        with engine.connect() as conn:
+            # Check if tables exist first
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS langchain_pg_collection (
+                    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    name VARCHAR(100),
+                    cmetadata JSONB
+                );
+            """))
+            
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS langchain_pg_embedding (
+                    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    collection_id UUID REFERENCES langchain_pg_collection(uuid),
+                    embedding vector(384),
+                    document TEXT,
+                    cmetadata JSONB,
+                    custom_id VARCHAR(100)
+                );
+            """))
+            
+            conn.commit()
             
     except Exception as e:
         st.error(f"Database initialization error: {str(e)}")
@@ -110,56 +105,150 @@ class KnowledgeBase:
     
     def add_document(self, file_path):
         """Add a document to the knowledge base"""
-        # Load document based on file type
-        if file_path.endswith('.pdf'):
-            loader = PyPDFLoader(file_path)
-        else:
-            loader = TextLoader(file_path)
+        try:
+            st.write(f"Loading document: {file_path}")
             
-        documents = loader.load()
-        # Split text into chunks
-        texts = self.text_splitter.split_documents(documents)
-        # Add to vector store
-        self.vector_store.add_documents(texts)
-        
-    def search(self, query, k=3):
+            # Load document based on file type
+            if file_path.endswith('.pdf'):
+                loader = PyPDFLoader(file_path)
+                st.write("Using PDF loader")
+            else:
+                loader = TextLoader(file_path)
+                st.write("Using Text loader")
+                
+            documents = loader.load()
+            st.write(f"Loaded {len(documents)} document(s)")
+            
+            # Split text into chunks
+            texts = self.text_splitter.split_documents(documents)
+            st.write(f"Split into {len(texts)} chunks")
+            
+            # Add to vector store
+            ids = self.vector_store.add_documents(texts)
+            st.write(f"Added {len(ids)} chunks to vector store")
+            
+            return True
+            
+        except Exception as e:
+            st.error(f"Error adding document: {str(e)}")
+            return False
+
+    def search(self, query, k=3, debug=False):
         """Enhanced search with question-answering focus"""
-        # Get more results initially to find best answer
-        results = self.vector_store.similarity_search_with_score(
-            query, 
-            k=k*2  # Get more results to filter
-        )
-        
-        # Format and filter results
-        formatted_results = []
-        for doc, score in results:
-            # Convert score to similarity percentage
-            similarity = (1 - score) * 100
+        try:
+            if debug:
+                st.write("Executing search...")
             
-            # Only include relevant results
-            if similarity > 30:
-                # Clean and format the content
-                content = doc.page_content.strip()
+            # Get results
+            results = self.vector_store.similarity_search_with_score(
+                query, 
+                k=k*2  # Get more results to filter
+            )
+            
+            if debug:
+                st.write(f"Found {len(results)} initial results")
+            
+            # Format and filter results
+            formatted_results = []
+            for doc, score in results:
+                # Convert score to similarity percentage
+                similarity = (1 - score) * 100
                 
-                # For "who is" questions, try to extract relevant sentences
-                if query.lower().startswith("who is"):
-                    name = query.lower().replace("who is ", "").strip()
-                    sentences = content.split(". ")
-                    relevant_sentences = []
-                    for sentence in sentences:
-                        if name in sentence.lower():
-                            relevant_sentences.append(sentence)
-                    if relevant_sentences:
-                        content = ". ".join(relevant_sentences) + "."
+                if debug:
+                    st.write(f"Score: {score}, Similarity: {similarity}%")
+                    st.write(f"Content: {doc.page_content[:100]}...")
                 
-                formatted_results.append({
-                    'content': content,
-                    'similarity': f"{similarity:.1f}%",
-                    'metadata': doc.metadata
-                })
-        
-        # Sort by similarity
-        formatted_results.sort(key=lambda x: float(x['similarity'].rstrip('%')), reverse=True)
-        
-        # Return top k results
-        return formatted_results[:k] 
+                # Only include more relevant results (increased threshold)
+                if similarity > 40:  # Increased from 30 to 40 for better quality
+                    content = doc.page_content.strip()
+                    
+                    # For "who is" questions, try to extract relevant sentences
+                    if query.lower().startswith("who is"):
+                        name = query.lower().replace("who is ", "").strip()
+                        sentences = content.split(". ")
+                        relevant_sentences = [
+                            sent for sent in sentences 
+                            if name in sent.lower() or 
+                               any(term in sent.lower() for term in ["background", "experience", "worked", "role"])
+                        ]
+                        if relevant_sentences:
+                            content = ". ".join(relevant_sentences) + "."
+                    
+                    formatted_results.append({
+                        'content': content,
+                        'similarity': similarity,
+                        'metadata': doc.metadata
+                    })
+            
+            # Sort by similarity
+            formatted_results.sort(key=lambda x: float(x['similarity']), reverse=True)
+            
+            if debug:
+                st.write(f"Returning {len(formatted_results)} filtered results")
+            
+            return formatted_results[:k]
+            
+        except Exception as e:
+            st.error(f"Search error: {str(e)}")
+            return []
+
+    def check_documents(self):
+        """Debug function to check stored documents"""
+        try:
+            results = self.vector_store.similarity_search_with_score(
+                "test",  # Generic query to get some results
+                k=100  # Get many results to check
+            )
+            
+            st.write("### Stored Documents")
+            for doc, score in results:
+                st.write("---")
+                st.write("Content:", doc.page_content[:200])  # First 200 chars
+                st.write("Metadata:", doc.metadata)
+            
+        except Exception as e:
+            st.error(f"Error checking documents: {str(e)}")
+
+    def check_vector_store(self):
+        """Debug function to check vector store status"""
+        try:
+            # Try to query the collection table
+            conn_string = get_connection_string()
+            engine = create_engine(conn_string)
+            
+            with engine.connect() as conn:
+                # Check collection
+                result = conn.execute(text("""
+                    SELECT COUNT(*) FROM langchain_pg_collection 
+                    WHERE name = 'documents';
+                """)).fetchone()
+                st.write(f"Collections found: {result[0]}")
+                
+                # Check embeddings
+                result = conn.execute(text("""
+                    SELECT COUNT(*) FROM langchain_pg_embedding e
+                    JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                    WHERE c.name = 'documents';
+                """)).fetchone()
+                st.write(f"Embeddings stored: {result[0]}")
+                
+                # Sample some documents
+                results = conn.execute(text("""
+                    SELECT e.document, e.cmetadata
+                    FROM langchain_pg_embedding e
+                    JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                    WHERE c.name = 'documents'
+                    LIMIT 5;
+                """)).fetchall()
+                
+                if results:
+                    st.write("Sample documents:")
+                    for doc in results:
+                        st.write("---")
+                        st.write("Content:", doc[0][:200])
+                        st.write("Metadata:", doc[1])
+                else:
+                    st.write("No documents found in the database")
+                
+        except Exception as e:
+            st.error(f"Error checking vector store: {str(e)}") 

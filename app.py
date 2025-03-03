@@ -113,29 +113,40 @@ if uploaded_files:
 
 # Search section
 st.header("Search Documents")
-col1, col2 = st.columns([3,1])
+col1, col2, col3 = st.columns([3, 1, 1])
 with col1:
     query = st.text_input("Enter your search query")
 with col2:
     k = st.number_input("Number of results", min_value=1, max_value=10, value=3)
+with col3:
+    debug_search = st.checkbox("Debug Search", key="debug_search")
 
 if query:
     with st.spinner("Searching..."):
-        results = kb.search(query, k=k)
+        results = kb.search(query, k=k, debug=debug_search)
         
         if not results:
             st.info("No relevant results found. Try a different query.")
         else:
             st.subheader("Search Results")
             for i, result in enumerate(results, 1):
-                # Convert similarity to float if it's a string
                 similarity = result['similarity']
-                if isinstance(similarity, str):
-                    # Remove the % sign if present and convert to float
-                    similarity = float(similarity.rstrip('%'))
                 
-                with st.expander(f"Result {i} (Relevance: {similarity:.1f}%)", expanded=True):
-                    # Create two columns - one for content, one for metadata
+                # Only show full expander if similarity is high enough
+                if similarity > 60:
+                    expanded = True
+                    relevance_icon = "🎯"
+                elif similarity > 50:
+                    expanded = False
+                    relevance_icon = "✅"
+                else:
+                    expanded = False
+                    relevance_icon = "💡"
+                
+                with st.expander(
+                    f"{relevance_icon} Result {i} (Relevance: {similarity:.1f}%)", 
+                    expanded=expanded
+                ):
                     content_col, metadata_col = st.columns([2, 1])
                     
                     with content_col:
@@ -146,23 +157,50 @@ if query:
                         st.markdown("#### Source Details")
                         if result['metadata']:
                             metadata_html = []
-                            for key, value in result['metadata'].items():
-                                if key == 'page':
-                                    metadata_html.append(f"📄 **Page:** {value + 1}")
-                                elif key == 'source':
-                                    filename = os.path.basename(value)
-                                    metadata_html.append(f"📁 **File:** {filename}")
-                                elif key == 'creator':
-                                    metadata_html.append(f"👤 **Creator:** {value}")
-                                elif key == 'creationdate':
-                                    # Format date if it exists
-                                    try:
-                                        date = value.split('D:')[1][:8]  # Extract YYYYMMDD
-                                        formatted_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
-                                        metadata_html.append(f"📅 **Created:** {formatted_date}")
-                                    except:
-                                        metadata_html.append(f"📅 **Created:** {value}")
-                                else:
-                                    metadata_html.append(f"**{key.title()}:** {value}")
                             
-                            st.markdown("\n".join(metadata_html)) 
+                            # File information
+                            if 'source' in result['metadata']:
+                                filename = os.path.basename(result['metadata']['source'])
+                                metadata_html.append(f"📁 **Document:** {filename}")
+                            
+                            # Page information
+                            if 'page' in result['metadata']:
+                                page_num = result['metadata']['page'] + 1
+                                total_pages = result['metadata'].get('Total_Pages', '?')
+                                metadata_html.append(f"📄 **Page:** {page_num} of {total_pages}")
+                            
+                            # Creation information
+                            if 'creationdate' in result['metadata']:
+                                try:
+                                    date = result['metadata']['creationdate'].split('D:')[1][:8]
+                                    formatted_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+                                    metadata_html.append(f"📅 **Created:** {formatted_date}")
+                                except:
+                                    pass
+                            
+                            # Creator/Producer information
+                            creator = result['metadata'].get('creator', result['metadata'].get('Creator', None))
+                            producer = result['metadata'].get('producer', result['metadata'].get('Producer', None))
+                            
+                            if creator and creator != 'PyPDF':
+                                metadata_html.append(f"👤 **Author:** {creator}")
+                            if producer and not producer.startswith('macOS'):
+                                metadata_html.append(f"🔧 **Generated by:** {producer}")
+                            
+                            # Display the cleaned-up metadata
+                            if metadata_html:
+                                st.markdown("\n".join(metadata_html))
+                            else:
+                                st.markdown("*No additional details available*")
+
+# Add this after your search section
+if st.checkbox("Show Debug Info"):
+    st.header("Debug Information")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Check Vector Store"):
+            kb.check_vector_store()
+    with col2:
+        if st.button("Check Stored Documents"):
+            kb.check_documents() 
