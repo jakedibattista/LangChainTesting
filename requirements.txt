@@ -4,9 +4,9 @@ langchain-community
 langchain-huggingface
 huggingface-hub
 sentence-transformers
-psycopg2-binary
+psycopg2-binary>=2.9.9
 python-dotenv
 supabase
 pgvector
-sqlalchemy
+sqlalchemy>=2.0.0
 watchdog

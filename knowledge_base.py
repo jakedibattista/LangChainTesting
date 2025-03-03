@@ -37,17 +37,22 @@ def get_connection_string():
 
 def create_db_engine(conn_string):
     """Create SQLAlchemy engine with proper SSL configuration"""
-    connect_args = {
-        "sslmode": "require",
-        "connect_timeout": 30
-    }
+    # Add query parameters to connection string if not present
+    if '?' not in conn_string:
+        conn_string += "?sslmode=require"
     
     return create_engine(
         conn_string,
-        connect_args=connect_args,
         pool_pre_ping=True,
         pool_size=5,
-        max_overflow=10
+        max_overflow=10,
+        connect_args={
+            "connect_timeout": 30,
+            "keepalives": 1,
+            "keepalives_idle": 30,
+            "keepalives_interval": 10,
+            "keepalives_count": 5
+        }
     )
 
 def init_database():
@@ -55,15 +60,25 @@ def init_database():
     try:
         # Get database connection
         conn_string = get_connection_string()
-        engine = create_db_engine(conn_string)
         
-        # Initialize vector store
+        # Initialize vector store first (this will test the connection)
+        vector_store = PGVector(
+            connection_string=conn_string,
+            embedding_function=HuggingFaceEmbeddings(
+                model_name="all-MiniLM-L6-v2",
+                model_kwargs={'device': 'cpu'}
+            ),
+            collection_name="documents",
+            distance_strategy="cosine",
+            connection_args={"sslmode": "require"}
+        )
+        
+        # Now create tables
+        engine = create_db_engine(conn_string)
         with engine.connect() as conn:
-            # Create vector extension
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
             conn.execute(text("COMMIT;"))
             
-            # Create tables
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS langchain_pg_collection (
                     uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
