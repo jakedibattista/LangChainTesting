@@ -61,43 +61,23 @@ def init_database():
         # Get database connection
         conn_string = get_connection_string()
         
-        # Initialize vector store first (this will test the connection)
-        vector_store = PGVector(
-            connection_string=conn_string,
-            embedding_function=HuggingFaceEmbeddings(
-                model_name="all-MiniLM-L6-v2",
-                model_kwargs={'device': 'cpu'}
-            ),
-            collection_name="documents",
-            distance_strategy="cosine"
+        # Initialize vector store with pre-initialized embeddings
+        embeddings = HuggingFaceEmbeddings(
+            model_name="all-MiniLM-L6-v2",
+            model_kwargs={'device': 'cpu'}
         )
         
-        # Now create tables
-        engine = create_db_engine(conn_string)
-        with engine.connect() as conn:
-            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
-            conn.execute(text("COMMIT;"))
-            
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS langchain_pg_collection (
-                    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    name VARCHAR(100),
-                    cmetadata JSONB
-                );
-            """))
-            
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS langchain_pg_embedding (
-                    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    collection_id UUID REFERENCES langchain_pg_collection(uuid),
-                    embedding vector(384),
-                    document TEXT,
-                    cmetadata JSONB,
-                    custom_id VARCHAR(100)
-                );
-            """))
-            
-            conn.commit()
+        # Let PGVector handle the initialization
+        vector_store = PGVector.from_documents(
+            documents=[],  # Empty list for initial setup
+            embedding=embeddings,
+            collection_name="documents",
+            connection_string=conn_string,
+            distance_strategy="cosine",
+            pre_delete_collection=False  # Don't delete existing data
+        )
+        
+        return vector_store
             
     except Exception as e:
         st.error(f"Database initialization error: {str(e)}")
@@ -105,9 +85,6 @@ def init_database():
 
 class KnowledgeBase:
     def __init__(self):
-        # Initialize database
-        init_database()
-        
         # Initialize embedding model
         self.embeddings = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
@@ -123,14 +100,8 @@ class KnowledgeBase:
             is_separator_regex=False,
         )
         
-        # Initialize vector store with proper connection handling
-        conn_string = get_connection_string()
-        self.vector_store = PGVector(
-            connection_string=conn_string,
-            embedding_function=self.embeddings,
-            collection_name="documents",
-            distance_strategy="cosine"
-        )
+        # Initialize vector store
+        self.vector_store = init_database()
     
     def add_document(self, file_path):
         """Add a document to the knowledge base"""
