@@ -12,16 +12,29 @@ from sqlalchemy import create_engine, text
 load_dotenv()
 
 def get_connection_string():
+    """Get database connection string from environment or secrets"""
+    conn_string = None
+    
+    # Try getting from Streamlit secrets
     if hasattr(st, 'secrets'):
         try:
-            # Get Supabase credentials
-            supabase_url = st.secrets["supabase"]["url"]
-            # Use the postgres connection string directly
-            return st.secrets["postgres"]["database_url"]
+            conn_string = st.secrets["postgres"]["database_url"]
         except KeyError:
-            pass
-    # Fallback to environment variables
-    return os.getenv("DATABASE_URL")
+            st.warning("Database URL not found in Streamlit secrets")
+    
+    # Fallback to environment variable
+    if not conn_string:
+        conn_string = os.getenv("DATABASE_URL")
+    
+    # Raise error if no connection string found
+    if not conn_string:
+        raise ValueError(
+            "Database connection string not found. "
+            "Please set DATABASE_URL environment variable "
+            "or configure postgres.database_url in Streamlit secrets."
+        )
+    
+    return conn_string
 
 def init_database():
     """Initialize database with required extensions and tables"""
@@ -35,17 +48,22 @@ def init_database():
                 supabase_url = st.secrets["supabase"]["url"]
                 supabase_key = st.secrets["supabase"]["key"]
             except KeyError:
-                pass
+                st.warning("Supabase credentials not found in Streamlit secrets")
         
         if not supabase_url or not supabase_key:
-            raise ValueError("Missing Supabase credentials")
+            raise ValueError(
+                "Missing Supabase credentials. "
+                "Please configure supabase.url and supabase.key in Streamlit secrets."
+            )
             
         # Initialize Supabase client
         supabase = create_client(supabase_url, supabase_key)
         
-        # The vector extension should already be enabled in Supabase
-        # We just need to ensure our tables exist
+        # Get database connection
         conn_string = get_connection_string()
+        if not conn_string:
+            raise ValueError("Database connection string is required")
+            
         engine = create_engine(conn_string)
         
         with engine.connect() as conn:
