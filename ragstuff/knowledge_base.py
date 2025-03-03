@@ -1,59 +1,61 @@
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores.pgvector import PGVector
 from langchain_community.document_loaders import TextLoader, PyPDFLoader
 import os
 from dotenv import load_dotenv
 import streamlit as st
-from supabase import create_client
+import psycopg2
 from sqlalchemy import create_engine, text
+from urllib.parse import urlparse
 
 # Load environment variables
 load_dotenv()
 
 def get_connection_string():
+    """Get database connection string with proper formatting"""
     if hasattr(st, 'secrets'):
         try:
-            # Get Supabase credentials
-            supabase_url = st.secrets["supabase"]["url"]
-            # Use the postgres connection string directly
-            return st.secrets["postgres"]["database_url"]
+            # Get the connection URL from secrets
+            db_url = st.secrets["postgres"]["database_url"]
+            return db_url
         except KeyError:
-            pass
-    # Fallback to environment variables
-    return os.getenv("DATABASE_URL")
+            st.error("Database configuration not found in secrets")
+            raise
+    return os.getenv("DATABASE_URL", "postgresql:///postgres")
 
 def init_database():
     """Initialize database with required extensions and tables"""
     conn_string = get_connection_string()
     
     try:
-        # Create engine
-        engine = create_engine(conn_string)
+        # Create engine with required parameters
+        engine = create_engine(
+            conn_string,
+            connect_args={
+                "sslmode": "require"  # Required for Supabase
+            } if "supabase.co" in conn_string else {}
+        )
         
-        # Create tables with correct schema
+        # Create extensions and tables
         with engine.connect() as conn:
-            # Create vector extension if not exists
+            # Create vector extension
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            conn.execute(text("COMMIT;"))  # Commit the extension creation
             
-            # Drop existing tables if they exist
-            conn.execute(text("DROP TABLE IF EXISTS langchain_pg_embedding;"))
-            conn.execute(text("DROP TABLE IF EXISTS langchain_pg_collection;"))
-            
-            # Create collection table with uuid
+            # Create tables
             conn.execute(text("""
-                CREATE TABLE langchain_pg_collection (
-                    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                CREATE TABLE IF NOT EXISTS langchain_pg_collection (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     name VARCHAR(100),
                     cmetadata JSONB
                 );
             """))
             
-            # Create embedding table
             conn.execute(text("""
-                CREATE TABLE langchain_pg_embedding (
-                    uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    collection_id UUID REFERENCES langchain_pg_collection(uuid),
+                CREATE TABLE IF NOT EXISTS langchain_pg_embedding (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    collection_id UUID REFERENCES langchain_pg_collection(id),
                     embedding vector(384),
                     document TEXT,
                     cmetadata JSONB,
@@ -63,28 +65,32 @@ def init_database():
             
             conn.commit()
             
-        # Initialize Supabase client for other operations
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
-        
-        if hasattr(st, 'secrets'):
-            try:
-                supabase_url = st.secrets["supabase"]["url"]
-                supabase_key = st.secrets["supabase"]["key"]
-            except KeyError:
-                pass
-        
-        supabase = create_client(supabase_url, supabase_key)
-            
     except Exception as e:
         st.error(f"Database initialization error: {str(e)}")
         raise e
 
+def get_db_params():
+    """Get database connection parameters"""
+    if hasattr(st, 'secrets'):
+        try:
+            url = st.secrets["postgres"]["database_url"]
+            # Parse URL into components
+            parsed = urlparse(url)
+            return {
+                "host": parsed.hostname,
+                "port": parsed.port,
+                "database": parsed.path[1:],  # Remove leading slash
+                "user": parsed.username,
+                "password": parsed.password,
+                "sslmode": "require"
+            }
+        except KeyError:
+            st.error("Database configuration not found in secrets")
+            raise
+    return {}
+
 class KnowledgeBase:
     def __init__(self):
-        # Initialize database
-        init_database()
-        
         # Initialize embedding model
         self.embeddings = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2",
@@ -100,13 +106,21 @@ class KnowledgeBase:
             is_separator_regex=False,
         )
         
-        # Initialize vector store
-        self.vector_store = PGVector(
-            connection_string=get_connection_string(),
-            embedding_function=self.embeddings,
-            collection_name="documents",
-            distance_strategy="cosine"
-        )
+        # Initialize vector store with proper connection handling
+        try:
+            db_params = get_db_params()
+            self.vector_store = PGVector(
+                connection_string=get_connection_string(),
+                embedding_function=self.embeddings,
+                collection_name="documents",
+                distance_strategy="cosine",
+                pre_delete_collection=False,
+                connection_args=db_params
+            )
+        except Exception as e:
+            st.error(f"Failed to connect to database: {str(e)}")
+            st.info("Please check your database configuration in Streamlit secrets.")
+            raise
     
     def add_document(self, file_path):
         """Add a document to the knowledge base"""

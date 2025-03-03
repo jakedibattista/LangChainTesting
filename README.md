@@ -96,8 +96,3 @@ MIT
 
 Built with ❤️ using LangChain, Streamlit, and Supabase
 
-
-## License
-[MIT](https://choosealicense.com/licenses/mit/)
-
-Built with ❤️ using LangChain and Streamlit

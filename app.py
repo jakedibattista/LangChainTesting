@@ -128,22 +128,41 @@ if query:
         else:
             st.subheader("Search Results")
             for i, result in enumerate(results, 1):
-                with st.expander(f"Result {i} - Relevance: {result['similarity']}"):
-                    # Create columns for content and metadata
-                    content_col, metadata_col = st.columns([3, 1])
+                # Convert similarity to float if it's a string
+                similarity = result['similarity']
+                if isinstance(similarity, str):
+                    # Remove the % sign if present and convert to float
+                    similarity = float(similarity.rstrip('%'))
+                
+                with st.expander(f"Result {i} (Relevance: {similarity:.1f}%)", expanded=True):
+                    # Create two columns - one for content, one for metadata
+                    content_col, metadata_col = st.columns([2, 1])
                     
-                    # Display content in left column
                     with content_col:
+                        st.markdown("#### Content")
                         st.markdown(result['content'])
                     
-                    # Show metadata in right column
                     with metadata_col:
+                        st.markdown("#### Source Details")
                         if result['metadata']:
-                            st.subheader("Source Details")
+                            metadata_html = []
                             for key, value in result['metadata'].items():
                                 if key == 'page':
-                                    st.markdown(f"**Page Number:** {value + 1}")  # Add 1 since pages start at 0
+                                    metadata_html.append(f"📄 **Page:** {value + 1}")
                                 elif key == 'source':
-                                    st.markdown(f"**File:** {os.path.basename(value)}")  # Show just filename
+                                    filename = os.path.basename(value)
+                                    metadata_html.append(f"📁 **File:** {filename}")
+                                elif key == 'creator':
+                                    metadata_html.append(f"👤 **Creator:** {value}")
+                                elif key == 'creationdate':
+                                    # Format date if it exists
+                                    try:
+                                        date = value.split('D:')[1][:8]  # Extract YYYYMMDD
+                                        formatted_date = f"{date[:4]}-{date[4:6]}-{date[6:]}"
+                                        metadata_html.append(f"📅 **Created:** {formatted_date}")
+                                    except:
+                                        metadata_html.append(f"📅 **Created:** {value}")
                                 else:
-                                    st.markdown(f"**{key.title()}:** {value}") 
+                                    metadata_html.append(f"**{key.title()}:** {value}")
+                            
+                            st.markdown("\n".join(metadata_html)) 
