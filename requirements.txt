@@ -1,0 +1,12 @@
+langchain==0.1.12
+langchain-community>=0.0.28
+psycopg[binary]>=3.2.5
+psycopg2-binary>=2.9.9
+pgvector>=0.2.5
+python-dotenv==1.0.0
+sentence-transformers==2.5.1
+pypdf==4.1.0
+transformers==4.37.2
+torch>=2.6.0
+sqlalchemy>=2.0.0
+streamlit>=1.32.0
