@@ -1,71 +1,101 @@
 # Document Search Engine
 
-A semantic search application built with LangChain, PostgreSQL/pgvector, and Streamlit. This app allows users to:
+A semantic search application built with LangChain, Supabase (PostgreSQL/pgvector), and Streamlit.
 
 ## Features
-- 📄 Upload and process PDF and text documents
-- 🔍 Perform semantic search across documents using embeddings
-- 📊 View search results with relevance scores
-- 🗑️ Manage documents with batch delete functionality
+
+* 📄 Upload and process PDF and text documents
+* 🔍 Perform semantic search across documents using embeddings
+* 📊 View search results with relevance scores and metadata
+* 🗑️ Manage documents with batch delete functionality
 
 ## Tech Stack
-- **Frontend**: Streamlit
-- **Backend**: Python, LangChain
-- **Database**: PostgreSQL with pgvector extension
-- **Embeddings**: HuggingFace (all-MiniLM-L6-v2)
+
+* **Frontend**: Streamlit
+* **Backend**: Python, LangChain
+* **Database**: Supabase (PostgreSQL with pgvector)
+* **Embeddings**: HuggingFace (all-MiniLM-L6-v2)
 
 ## Prerequisites
-- Python 3.8+
-- PostgreSQL with pgvector extension
-- pip (Python package manager)
+
+* Python 3.8+
+* Supabase account
+* pip (Python package manager)
 
 ## Installation
 
 1. Clone the repository:
-bash
+
+```bash
 git clone https://github.com/yourusername/document-search-engine.git
 cd document-search-engine
-
+```
 
 2. Create a virtual environment and activate it:
-bash
+
+```bash
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
 3. Install dependencies:
-bash
+
+```bash
 pip install -r requirements.txt
+```
 
+4. Set up Supabase:
+   * Create a new Supabase project
+   * Enable pgvector extension in the SQL editor:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
 
-4. Set up PostgreSQL:
-- Install PostgreSQL
-- Create a database
-- Enable pgvector extension: `CREATE EXTENSION vector;`
+5. Configure environment variables:
+   Create a `.env` file:
+   ```env
+   DATABASE_URL="your-supabase-postgres-connection-string"
+   SUPABASE_URL="your-supabase-project-url"
+   SUPABASE_KEY="your-supabase-anon-key"
+   ```
 
-## Local Development
-1. Start the Streamlit app:
-bash
-streamlit run app.py
+   Or create `.streamlit/secrets.toml`:
+   ```toml
+   [postgres]
+   database_url = "your-supabase-postgres-connection-string"
 
-2. Open your browser and navigate to:
-http://localhost:8501
-
-
-## Project Structure
-- `app.py`: Main Streamlit application
-- `knowledge_base.py`: Core document processing and search functionality
-- `manage_db.py`: Database management utilities
-- `test_kb.py`: Test script for knowledge base
-- `test_connection.py`: Database connection test
+   [supabase]
+   url = "your-supabase-project-url"
+   key = "your-supabase-anon-key"
+   ```
 
 ## Usage
-1. Upload documents using the file uploader
-2. View and manage documents in the sidebar
-3. Search through documents using natural language queries
-4. View results with relevance scores and source information
 
-## Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+1. Start the Streamlit app:
+
+```bash
+streamlit run app.py
+```
+
+2. Open your browser and navigate to: http://localhost:8501
+
+3. Upload documents using the file uploader
+4. Use the sidebar to manage documents
+5. Enter search queries to find relevant content
+6. View results with relevance scores and metadata
+
+## Project Structure
+
+* `app.py`: Main Streamlit application
+* `knowledge_base.py`: Core document processing and search functionality
+* `manage_db.py`: Database management utilities
+
+## License
+
+MIT
+
+Built with ❤️ using LangChain, Streamlit, and Supabase
+
 
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)
