@@ -69,8 +69,7 @@ def init_database():
                 model_kwargs={'device': 'cpu'}
             ),
             collection_name="documents",
-            distance_strategy="cosine",
-            connection_args={"sslmode": "require"}
+            distance_strategy="cosine"
         )
         
         # Now create tables
@@ -130,8 +129,7 @@ class KnowledgeBase:
             connection_string=conn_string,
             embedding_function=self.embeddings,
             collection_name="documents",
-            distance_strategy="cosine",
-            connection_args={"sslmode": "require"}
+            distance_strategy="cosine"
         )
     
     def add_document(self, file_path):
