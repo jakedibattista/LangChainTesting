@@ -95,3 +95,4 @@ streamlit run app.py
 MIT
 
 Built with ❤️ using LangChain, Streamlit, and Supabase
+
