@@ -128,7 +128,13 @@ if query:
         else:
             st.subheader("Search Results")
             for i, result in enumerate(results, 1):
-                with st.expander(f"Result {i} (Relevance: {result['similarity']:.1f}%)", expanded=True):
+                # Convert similarity to float if it's a string
+                similarity = result['similarity']
+                if isinstance(similarity, str):
+                    # Remove the % sign if present and convert to float
+                    similarity = float(similarity.rstrip('%'))
+                
+                with st.expander(f"Result {i} (Relevance: {similarity:.1f}%)", expanded=True):
                     # Create two columns - one for content, one for metadata
                     content_col, metadata_col = st.columns([2, 1])
                     
