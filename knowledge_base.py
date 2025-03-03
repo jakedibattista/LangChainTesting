@@ -139,10 +139,10 @@ class KnowledgeBase:
             if debug:
                 st.write("Executing search...")
             
-            # Get results
+            # Get more results initially to allow for better filtering
             results = self.vector_store.similarity_search_with_score(
                 query, 
-                k=k*2  # Get more results to filter
+                k=k*3  # Get more results to filter
             )
             
             if debug:
@@ -158,22 +158,28 @@ class KnowledgeBase:
                     st.write(f"Score: {score}, Similarity: {similarity}%")
                     st.write(f"Content: {doc.page_content[:100]}...")
                 
-                # Only include more relevant results (increased threshold)
-                if similarity > 40:  # Increased from 30 to 40 for better quality
-                    content = doc.page_content.strip()
-                    
-                    # For "who is" questions, try to extract relevant sentences
-                    if query.lower().startswith("who is"):
-                        name = query.lower().replace("who is ", "").strip()
-                        sentences = content.split(". ")
-                        relevant_sentences = [
-                            sent for sent in sentences 
-                            if name in sent.lower() or 
-                               any(term in sent.lower() for term in ["background", "experience", "worked", "role"])
-                        ]
-                        if relevant_sentences:
-                            content = ". ".join(relevant_sentences) + "."
-                    
+                content = doc.page_content.strip()
+                
+                # Handle different types of questions
+                query_lower = query.lower()
+                if "experience" in query_lower or "background" in query_lower:
+                    # For experience-related questions
+                    relevant_terms = ["experience", "background", "worked", "role", 
+                                    "led", "developed", "built", "created", "designed",
+                                    "ux", "user experience", "interface"]
+                    sentences = content.split(". ")
+                    relevant_sentences = [
+                        sent for sent in sentences 
+                        if any(term in sent.lower() for term in relevant_terms)
+                    ]
+                    if relevant_sentences:
+                        content = ". ".join(relevant_sentences) + "."
+                        # Boost similarity for highly relevant content
+                        if any(term in content.lower() for term in ["ux", "user experience"]):
+                            similarity += 10
+                
+                # Only include relevant results
+                if similarity > 35:  # Lowered threshold but with better filtering
                     formatted_results.append({
                         'content': content,
                         'similarity': similarity,
@@ -186,7 +192,16 @@ class KnowledgeBase:
             if debug:
                 st.write(f"Returning {len(formatted_results)} filtered results")
             
-            return formatted_results[:k]
+            # Remove duplicate content
+            seen_content = set()
+            unique_results = []
+            for result in formatted_results:
+                content_hash = hash(result['content'])
+                if content_hash not in seen_content:
+                    seen_content.add(content_hash)
+                    unique_results.append(result)
+            
+            return unique_results[:k]
             
         except Exception as e:
             st.error(f"Search error: {str(e)}")
