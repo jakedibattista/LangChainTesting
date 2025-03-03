@@ -26,7 +26,6 @@ def get_connection_string():
     if not conn_string:
         conn_string = os.getenv("DATABASE_URL")
     
-    # Raise error if no connection string found
     if not conn_string:
         raise ValueError(
             "Database connection string not found. "
@@ -36,38 +35,35 @@ def get_connection_string():
     
     return conn_string
 
+def create_db_engine(conn_string):
+    """Create SQLAlchemy engine with proper SSL configuration"""
+    connect_args = {
+        "sslmode": "require",
+        "connect_timeout": 30
+    }
+    
+    return create_engine(
+        conn_string,
+        connect_args=connect_args,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=10
+    )
+
 def init_database():
     """Initialize database with required extensions and tables"""
     try:
-        # Get Supabase credentials
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
-        
-        if hasattr(st, 'secrets'):
-            try:
-                supabase_url = st.secrets["supabase"]["url"]
-                supabase_key = st.secrets["supabase"]["key"]
-            except KeyError:
-                st.warning("Supabase credentials not found in Streamlit secrets")
-        
-        if not supabase_url or not supabase_key:
-            raise ValueError(
-                "Missing Supabase credentials. "
-                "Please configure supabase.url and supabase.key in Streamlit secrets."
-            )
-            
-        # Initialize Supabase client
-        supabase = create_client(supabase_url, supabase_key)
-        
         # Get database connection
         conn_string = get_connection_string()
-        if not conn_string:
-            raise ValueError("Database connection string is required")
-            
-        engine = create_engine(conn_string)
+        engine = create_db_engine(conn_string)
         
+        # Initialize vector store
         with engine.connect() as conn:
-            # Check if tables exist first
+            # Create vector extension
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            conn.execute(text("COMMIT;"))
+            
+            # Create tables
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS langchain_pg_collection (
                     uuid UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -113,12 +109,14 @@ class KnowledgeBase:
             is_separator_regex=False,
         )
         
-        # Initialize vector store
+        # Initialize vector store with proper connection handling
+        conn_string = get_connection_string()
         self.vector_store = PGVector(
-            connection_string=get_connection_string(),
+            connection_string=conn_string,
             embedding_function=self.embeddings,
             collection_name="documents",
-            distance_strategy="cosine"
+            distance_strategy="cosine",
+            connection_args={"sslmode": "require"}
         )
     
     def add_document(self, file_path):
